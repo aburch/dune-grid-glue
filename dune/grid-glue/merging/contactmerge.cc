@@ -2,6 +2,7 @@
 // vi: set et ts=4 sw=2 sts=2:
 
 #include <dune/grid-glue/common/projectionhelper.hh>
+#include <dune/grid-glue/common/projectionhelper2.hh>
 
 template<int dimworld, typename T>
 void ContactMerge<dimworld, T>::computeIntersections(const Dune::GeometryType& grid1ElementType,
@@ -14,6 +15,8 @@ void ContactMerge<dimworld, T>::computeIntersections(const Dune::GeometryType& g
                                    unsigned int grid2Index,
                                    std::vector<RemoteSimplicialIntersection>& intersections)
 {
+    using std::get;
+
     std::vector<std::array<LocalCoords,2> > polytopeCorners;
 
     // Initialize
@@ -22,6 +25,11 @@ void ContactMerge<dimworld, T>::computeIntersections(const Dune::GeometryType& g
 
     const int nCorners1 = grid1ElementCorners.size();
     const int nCorners2 = grid2ElementCorners.size();
+
+    if (nCorners1 != dimworld)
+      DUNE_THROW(Dune::Exception, "element1 must have " << dimworld << " corners, but has " << nCorners1);
+    if (nCorners2 != dimworld)
+      DUNE_THROW(Dune::Exception, "element2 must have " << dimworld << " corners, but has " << nCorners2);
 
     // The grid1 projection directions
     std::vector<WorldCoords> directions1(nCorners1);
@@ -39,65 +47,56 @@ void ContactMerge<dimworld, T>::computeIntersections(const Dune::GeometryType& g
     //  Compute all corners of the intersection polytope
     /////////////////////////////////////////////////////
 
+    const auto corners = std::make_pair(grid1ElementCorners, grid2ElementCorners);
+    const auto normals = std::make_pair(directions1, directions2);
+    Dune::GridGlue::Projection<WorldCoords> p(corners, normals);
+    p.project();
 
-    // If we hit a corner of the grid1 element we store its index
-    std::vector<int> hitCorners(nCorners2,-1);
-    // If a corner was hit already we don't have to project it
-    std::vector<bool> skip(nCorners1);
-    std::vector<bool> proj(nCorners2);
+    /* projection */
+    {
+      const auto& success = p.m_success.first;
+      const auto& images = p.m_images.first;
+      for (unsigned i = 0; i < dimworld; ++i) {
+        if (success[i]) {
+          std::array<LocalCoords, 2> corner;
+          corner[0] = localCornerCoords(i, grid1ElementType);
+          for (unsigned j = 0; j < dim; ++j)
+            corner[1][j] = images[i][j];
+          polytopeCorners.push_back(corner);
+        }
+      }
+    }
+
+    /* inverse projection */
+    {
+      const auto& success = p.m_success.second;
+      const auto& preimages = p.m_images.second;
+      for (unsigned i = 0; i < dimworld; ++i) {
+        if (success[i]) {
+          std::array<LocalCoords, 2> corner;
+          for (unsigned j = 0; j < dim; ++j)
+            corner[0][j] = preimages[i][j];
+          corner[1] = localCornerCoords(i, grid2ElementType);
+          polytopeCorners.push_back(corner);
+        }
+      }
+    }
+
+    /* edge intersections */
+    {
+      for (unsigned i = 0; i < p.m_number_of_edge_intersections; ++i) {
+        std::array<LocalCoords, 2> corner;
+        const auto& local = p.m_edge_intersections[i].local;
+        for (unsigned j = 0; j < dim; ++j) {
+          corner[0][j] = local[0][j];
+          corner[1][j] = local[1][j];
+        }
+        polytopeCorners.push_back(corner);
+      }
+    }
 
     // local coordinates
     LocalCoords localCoords;
-
-    // Compute which points of the grid2 element lie inside the grid1 element
-    for (size_t i=0; i<grid2ElementCorners.size(); i++)
-        if (Projection::template inverseProjection<dim,dimworld,T>(grid1ElementCorners, directions1,
-                                                                grid2ElementCorners[i], localCoords, overlap_)) {
-
-            // Check if projection is feasible
-            if (!isFeasibleProjection(grid1ElementCorners, directions1, grid1ElementType,
-                                        grid2ElementCorners[i], directions2[i], localCoords))
-                continue;
-
-            // corner could be projected
-            proj[i] = true;
-
-            std::array<LocalCoords,2> corner;
-            corner[1] = localCornerCoords(i,grid2ElementType);
-            corner[0] = localCoords;
-
-            polytopeCorners.push_back(corner);
-
-            hitCorners[i] = isCorner(grid1ElementType,localCoords);
-
-            if (hitCorners[i] != -1)
-                skip[hitCorners[i]]=true;
-        }
-
-    // Compute which points of the grid1 element lie inside the grid2 element
-    for (size_t i=0; i<grid1ElementCorners.size(); i++) {
-
-        if (skip[i])
-            continue;
-
-        if (Projection::template projection<dim,dimworld,T>(grid1ElementCorners[i], directions1[i],
-                                                                grid2ElementCorners, localCoords, overlap_)) {
-
-            // Check if projection is feasible
-            if (!isFeasibleProjection(grid2ElementCorners, directions2, grid2ElementType,
-                                        grid1ElementCorners[i], directions1[i], localCoords))
-                continue;
-
-            std::array<LocalCoords,2> corner;
-            corner[0] = localCornerCoords(i,grid1ElementType);
-            corner[1] = localCoords;
-
-            // corner could be projected
-            skip[i] = true;
-
-            polytopeCorners.push_back(corner);
-        }
-    }
 
     // check which neighbors might also intersect
     const Dune::ReferenceElement<T,dim>& ref2 = Dune::ReferenceElements<T,dim>::general(grid2ElementType);
@@ -108,7 +107,7 @@ void ContactMerge<dimworld, T>::computeIntersections(const Dune::GeometryType& g
 
         bool intersects(true);
         for (int k=0; k<ref2.size(i,1,dim); k++)
-            intersects &= proj[ref2.subEntity(i,1,k,dim)];
+            intersects &= p.m_success.second[ref2.subEntity(i,1,k,dim)];
 
         if (intersects)
             neighborIntersects2[i] = true;
@@ -122,17 +121,30 @@ void ContactMerge<dimworld, T>::computeIntersections(const Dune::GeometryType& g
 
         bool intersects(true);
         for (int k=0; k<ref1.size(i,1,dim); k++)
-            intersects &= skip[ref1.subEntity(i,1,k,dim)];
+            intersects &= p.m_success.first[ref1.subEntity(i,1,k,dim)];
 
         if (intersects)
             neighborIntersects1[i] = true;
     }
 
     // Compute the edge intersections
+#if 0
     Projection::template addEdgeIntersections<dim,dimworld,T>(grid1ElementCorners,grid2ElementCorners,
                                                               directions1, grid1ElementType,
                                                               grid2ElementType, polytopeCorners, hitCorners,
                                                               neighborIntersects1, neighborIntersects2, overlap_);
+#else
+    for (unsigned i = 0; i < p.m_number_of_edge_intersections; ++i) {
+      std::cout << "There was an edge intersection?!" << std::endl;
+      const auto& edge = p.m_edge_intersections[i].edge;
+      neighborIntersects1[edge[0]] = true;
+      neighborIntersects2[edge[1]] = true;
+      //neighborIntersects1[edge[1]] = true;
+      //neighborIntersects2[edge[0]] = true;
+      //neighborIntersects1[edge[2]] = true;
+      //neighborIntersects2[edge[1]] = true;
+    }
+#endif
 
     // remove possible doubles
     removeDoubles(polytopeCorners);

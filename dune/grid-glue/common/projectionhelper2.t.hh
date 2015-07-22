@@ -7,30 +7,6 @@ namespace GridGlue {
 namespace ProjectionImplementation {
 
 template<typename Coordinate, typename Field>
-std::pair<bool, unsigned>
-isCorner(const Coordinate& x, const Field& epsilon)
-{
-  using std::abs;
-  const static unsigned invalid = std::numeric_limits<unsigned>::max();
-  const static unsigned dim = Coordinate::dimension;
-
-  Coordinate tmp = x;
-  tmp[dim-1] = Field(0);
-
-  if (tmp.infinity_norm() <= epsilon)
-    return {true, 0};
-
-  if (tmp.infinity_norm() < Field(1) - epsilon)
-    return {false, invalid};
-
-  for (unsigned i = 0; i < dim - 1; ++i)
-    if (abs(x[i]) > Field(1) - epsilon)
-      return {true, i + 1};
-
-  return {false, invalid};
-}
-
-template<typename Coordinate, typename Field>
 inline Coordinate
 corner(unsigned c)
 {
@@ -53,9 +29,9 @@ edgeToCorners(unsigned edge)
   DUNE_THROW(Dune::Exception, "Unexpected edge number.");
 }
 
-template<typename Coordinate>
+template<typename Coordinate, typename Corners>
 inline Coordinate
-barycentricToCartesian(const Coordinate& x, const std::array<Coordinate, Coordinate::dimension>& corners)
+barycentricToCartesian(const Coordinate& x, const Corners& corners)
 {
   Coordinate y = corners[0];
   for (unsigned i = 0; i < Coordinate::dimension - 1; ++i)
@@ -124,13 +100,13 @@ Projection<Coordinate>
 
   /* Project x_i */
   for (unsigned i = 0; i < origin.size(); ++i) {
-    std::cout << "do projection of " << origin[i] << std::endl;
+    //std::cout << "do projection of " << origin[i] << std::endl;
     for (unsigned j = 0; j < dim; ++j)
       m[j][dim-1] = normals[i][j];
 
     const Coordinate rhs = origin[i] - target[0];
     try {
-      std::cout << "m = " << m << std::endl;
+      //std::cout << "m = " << m << std::endl;
       auto& y = images[i];
       m.solve(y, rhs);
       for (unsigned j = 0; j < dim-1; ++j)
@@ -145,6 +121,18 @@ Projection<Coordinate>
       m_projection_valid = false;
     }
   }
+
+#if 0
+  std::cout << "-------------------------------------------" << std::endl
+            << "projection: success = " << success << std::endl
+            << "  origin: " << std::endl;
+  for (const auto& x : origin)
+    std::cout << "    " << x << std::endl;
+  std::cout << "  target:" << std::endl;
+  for (const auto& x : target)
+    std::cout << "    " << x << std::endl;
+  std::cout << std::endl;
+#endif
 }
 
 template<typename Coordinate>
@@ -190,8 +178,8 @@ Projection<Coordinate>
       rhs[j] = v[dim-1]*v[j];
     m.solve(z, rhs);
 
-    std::cout << "m = " << std::endl << m << std::endl;
-    std::cout << "rhs = " << rhs << std::endl;
+    //std::cout << "m = " << std::endl << m << std::endl;
+    //std::cout << "rhs = " << rhs << std::endl;
 
     for (unsigned j = 0; j < dim-1; ++j)
       preimages[i][j] = z[j];
@@ -222,6 +210,12 @@ Projection<Coordinate>
 
     success.set(i, success_i);
   }
+
+#if 0
+  std::cout << "-------------------------------------------" << std::endl
+            << "inverse projection: success = " << success << std::endl
+            << std::endl;
+#endif
 }
 
 template<typename Coordinate>
@@ -243,13 +237,9 @@ Projection<Coordinate>
    * - when the projected triangle lies fully in the target triangle,
    * - or when the target triangle lies fully in the projected triangle.
    */
-#if 0
   if (!m_projection_valid || get<0>(m_success).all() || get<1>(m_success).all()) {
-    for (auto& in : m_edge_intersections)
-      get<0>(in) = false;
     return;
   }
-#endif
 
   const auto& images = get<0>(m_images);
   const auto& ys = get<1>(m_corners);
@@ -266,13 +256,14 @@ Projection<Coordinate>
   for (unsigned edgex = 0; edgex < dim; ++edgex) {
     unsigned i, j;
     std::tie(i, j) = edgeToCorners(edgex);
+
+    /* Both sides of edgex lie in the target triangle means no edge intersection */
+    if (m_success.first[i] && m_success.first[j])
+      continue;
+
     const auto pxi = barycentricToCartesian(images[i], ys);
     const auto pxj = barycentricToCartesian(images[j], ys);
-    const auto pxipxj = pxi - pxj;
-    const auto corner_pxi = isCorner(images[i], m_epsilon).second;
-    const auto corner_pxj = isCorner(images[j], m_epsilon).second;
-    std::cout << "images[i] = " << images[i] << " pxi = " << pxi << " corner_pxi = " << corner_pxi << std::endl;
-    std::cout << "images[j] = " << images[j] << " pxj = " << pxj << " corner_pxj = " << corner_pxj << std::endl;
+    const auto pxjpxi = pxj - pxi;
 
     typedef Dune::FieldMatrix<Field, dim-1, dim-1> Matrix;
     typedef Dune::FieldVector<Field, dim-1> Vector;
@@ -280,7 +271,9 @@ Projection<Coordinate>
     for (unsigned edgey = 0; edgey < dim; ++edgey) {
       unsigned k, l;
       std::tie(k, l) = edgeToCorners(edgey);
-      if (corner_pxi == k || corner_pxi == l || corner_pxj == k || corner_pxj == l)
+
+      /* Both sides of edgey lie in the projected triangle means no edge intersection */
+      if (m_success.second[k] && m_success.second[l])
         continue;
 
       const auto ykyl = ys[k] - ys[l];
@@ -291,7 +284,7 @@ Projection<Coordinate>
 
       for (unsigned m = 0; m < dim-1; ++m) {
         const auto ym1y0 = ys[m+1] - ys[0];
-        mat[m][0] = pxipxj * ym1y0;
+        mat[m][0] = pxjpxi * ym1y0;
         mat[m][1] = ykyl * ym1y0;
         rhs[m] = ykpxi * ym1y0;
       }
@@ -299,30 +292,54 @@ Projection<Coordinate>
       try {
         mat.solve(z, rhs);
 
+        /* If solving the system gives a NaN, the edges are probably parallel. */
+        if (z[0] != z[0] || z[1] != z[1])
+          continue;
+
         Coordinate local_x = corner<Coordinate, Field>(i);
         local_x.axpy(z[0], corner<Coordinate, Field>(j) - corner<Coordinate, Field>(i));
         Coordinate local_y = corner<Coordinate, Field>(k);
         local_y.axpy(z[1], corner<Coordinate, Field>(l) - corner<Coordinate, Field>(k));
 
-        //if (!inside(local_x, m_epsilon) || !inside(local_y, m_epsilon))
-        //  continue;
-
-        /* TODO: check overlap */
-
-        std::cout << "-----------------------------" << std::endl
-                  << "intersecting lines " << edgex << " and " << edgey << ":" << std::endl
+#if 0
+        std::cout 
                   << "matrix: " << std::endl
                   << mat << std::endl
                   << "rhs: " << rhs << std::endl
                   << "solution: " << z << std::endl
                   << "local_x: " << local_x << std::endl
                   << "local_y: " << local_y << std::endl;
+
+        // TODO: Use earlier check
+        if (z[0] != z[0] || z[1] != z[1]) {
+          std::cout << "NAN" << std::endl;
+          continue;
+        }
+#endif
+
+        if (!inside(local_x, m_epsilon) || !inside(local_y, m_epsilon))
+          continue;
+
+        /* TODO: check overlap */
+
+        auto& intersection = m_edge_intersections[m_number_of_edge_intersections++];
+        intersection = { {edgex, edgey}, {local_x, local_y} };
+
       }
       catch(const Dune::FMatrixError&) {
         /* Edges might be parallel, ignore and continue with next edge */
       }
     }
   }
+}
+
+template<typename Coordinate>
+void Projection<Coordinate>
+::project()
+{
+  doProjection();
+  doInverseProjection();
+  doEdgeIntersection();
 }
 
 } /* namespace GridGlue */

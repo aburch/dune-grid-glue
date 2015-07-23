@@ -17,6 +17,9 @@ void ContactMerge<dimworld, T>::computeIntersections(const Dune::GeometryType& g
 {
     using std::get;
 
+    computeIntersectionCalls[0][grid1Index] += 1;
+    computeIntersectionCalls[1][grid2Index] += 1;
+
     std::vector<std::array<LocalCoords,2> > polytopeCorners;
 
     // Initialize
@@ -356,4 +359,47 @@ void ContactMerge<dimworld, T>::removeDoubles(std::vector<std::array<LocalCoords
         }
     }
     polytopeCorners.resize(counter);
+}
+
+template<int dimworld, typename T>
+void ContactMerge<dimworld, T>::report(
+  const std::vector<WorldCoords>& coords1,
+  const std::vector<unsigned int>& elements1,
+  const std::vector<Dune::GeometryType>& elementTypes1,
+  const std::vector<WorldCoords>& coords2,
+  const std::vector<unsigned int>& elements2,
+  const std::vector<Dune::GeometryType>& elementTypes2)
+{
+  const auto write = [&](const std::string& filename, const std::vector<WorldCoords>& coords, const std::vector<unsigned>& elements, const std::vector<Dune::GeometryType>& elementTypes, const std::vector<unsigned>& values) -> void {
+    std::ofstream out(filename);
+    out << "# vtk DataFile Version 2.0" << std::endl
+        << "ContactMerge: computeIntersection calls" << std::endl
+        << "ASCII" << std::endl
+        << "DATASET POLYDATA" << std::endl
+        << "POINTS " << coords.size() << " double" << std::endl;
+    for (const auto& x : coords)
+      out << x << std::endl;
+    out << "POLYGONS " << elementTypes.size() << " " << (elementTypes.size() + elements.size()) << std::endl;
+    std::cout << "elementTypes.size() = " << elementTypes.size() << std::endl
+              << "elements.size() = " << elements.size() << std::endl;
+    {
+      std::size_t i = 0;
+      for (const auto& et : elementTypes) {
+        std::size_t vs = Dune::ReferenceElements<T, dimworld-1>::general(et).size(dimworld-1);
+        out << vs;
+        for (unsigned j = 0; j < vs; ++j){
+          out << " " << elements[i++];
+        }
+        out << std::endl;
+      }
+    }
+    out << "CELL_DATA " << values.size() << std::endl
+        << "SCALARS calls int 1" << std::endl
+        << "LOOKUP_TABLE default" << std::endl;
+    for (const auto& v : values)
+      out << v << std::endl;
+  };
+
+  write("contactmerge-calls-0.vtk", coords1, elements1, elementTypes1, computeIntersectionCalls[0]);
+  write("contactmerge-calls-1.vtk", coords2, elements2, elementTypes2, computeIntersectionCalls[1]);
 }

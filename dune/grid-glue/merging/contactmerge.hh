@@ -110,6 +110,8 @@ private:
     //! Allow some overlap, i.e. also look in the negative projection directions
     T overlap_;
 
+    std::array< std::vector<unsigned>, 2 > computeIntersectionCalls;
+
     /** \brief Compute the intersection between two overlapping elements
      *
      *   The result is a set of simplices.
@@ -140,9 +142,14 @@ protected:
         setupNodalDirections(grid1Coords, grid1Elements, grid1ElementTypes,
                 grid2Coords, grid2Elements, grid2ElementTypes);
 
+        computeIntersectionCalls[0].resize(grid1ElementTypes.size(), 0);
+        computeIntersectionCalls[1].resize(grid2ElementTypes.size(), 0);
+
         Base::build(grid1Coords, grid1Elements, grid1ElementTypes,
                    grid2Coords, grid2Elements, grid2ElementTypes);
 
+        report(grid1Coords, grid1Elements, grid1ElementTypes,
+               grid2Coords, grid2Elements, grid2ElementTypes);
     }
 
 private:
@@ -277,6 +284,13 @@ protected:
 
     //! Remove all multiples
     void removeDoubles(std::vector<std::array<LocalCoords,2> >& polytopeCorners);
+
+    void report(const std::vector<WorldCoords>& coords1,
+                const std::vector<unsigned int>& elements1,
+                const std::vector<Dune::GeometryType>& elementTypes1,
+                const std::vector<WorldCoords>& coords2,
+                const std::vector<unsigned int>& elements2,
+                const std::vector<Dune::GeometryType>& elementTypes2);
 };
 
 #include "contactmerge.cc"

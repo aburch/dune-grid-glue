@@ -30,11 +30,11 @@ edgeToCorners(unsigned edge)
 }
 
 template<typename Coordinate, typename Corners>
-inline Coordinate
-barycentricToCartesian(const Coordinate& x, const Corners& corners)
+inline typename Corners::value_type
+interpolate(const Coordinate& x, const Corners& corners)
 {
-  Coordinate y = corners[0];
-  for (unsigned i = 0; i < Coordinate::dimension - 1; ++i)
+  auto y = corners[0];
+  for (unsigned i = 0; i < corners.size() - 1; ++i)
     y.axpy(x[i], corners[i+1] - corners[0]);
   return y;
 }
@@ -157,8 +157,8 @@ Projection<Coordinate>
 
   std::array<Coordinate, dim> v;
   for (unsigned i = 0; i < dim-1; ++i) {
-    v[i] = barycentricToCartesian(images[i+1], corners);
-    v[i] -= barycentricToCartesian(images[0], corners);
+    v[i] = interpolate(images[i+1], corners);
+    v[i] -= interpolate(images[0], corners);
   }
 
   Matrix m;
@@ -171,7 +171,7 @@ Projection<Coordinate>
   for (unsigned i = 0; i < dim; ++i) {
     /* Convert y_i to barycentric coordinates with respect to \phi(x_j) */
     v[dim-1] = corners[i];
-    v[dim-1] -= barycentricToCartesian(images[0], corners);
+    v[dim-1] -= interpolate(images[0], corners);
 
     Vector rhs, z;
     for (unsigned j = 0; j < dim-1; ++j)
@@ -186,14 +186,8 @@ Projection<Coordinate>
 
     /* Calculate distance along normal direction */
     {
-      const auto& xs = get<0>(m_corners);
-      const auto& ns = get<0>(m_normals);
-      auto x = xs[0];
-      auto nx = ns[0];
-      for (unsigned j = 0; j < dim-1; ++j) {
-        x.axpy(z[j], xs[j+1] - xs[0]);
-        nx.axpy(z[j], ns[j+1] - ns[0]);
-      }
+      const auto x = interpolate(z, get<0>(m_corners));
+      auto nx = interpolate(z, get<0>(m_normals));
       nx /= nx.two_norm();
       preimages[i][dim-1] = (x - corners[i])*nx;
     }
@@ -261,8 +255,8 @@ Projection<Coordinate>
     if (m_success.first[i] && m_success.first[j])
       continue;
 
-    const auto pxi = barycentricToCartesian(images[i], ys);
-    const auto pxj = barycentricToCartesian(images[j], ys);
+    const auto pxi = interpolate(images[i], ys);
+    const auto pxj = interpolate(images[j], ys);
     const auto pxjpxi = pxj - pxi;
 
     typedef Dune::FieldMatrix<Field, dim-1, dim-1> Matrix;

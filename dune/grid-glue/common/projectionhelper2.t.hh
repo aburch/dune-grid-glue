@@ -55,6 +55,16 @@ inside(const Coordinate& x, const Field& epsilon)
   return true;
 }
 
+#if 0
+template<typename Local, typename Coordinate>
+inline Coordinate::value_type
+distanceAlongNormal(const Local& xlocal, const std::array<Coordinate, Coordinate::dimension>& xnormals, const Coordinate& x, const Coordinate& y)
+{
+  const auto& n = interpolate(xlocal, xnormals);
+  return (y-x)*n;
+}
+#endif
+
 } /* namespace ProjectionImplementation */
 
 template<typename Coordinate>
@@ -325,6 +335,13 @@ Projection<Coordinate>
       }
     }
   }
+}
+
+template<typename Coordinate>
+bool Projection<Coordinate>
+::projectionFeasible(const Coordinate& x, const Coordinate& nx, const Coordinate& y, const Coordinate& ny) const
+{
+  return true;
 }
 
 template<typename Coordinate>

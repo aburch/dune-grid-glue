@@ -43,6 +43,8 @@ public:
   void doInverseProjection();
   void doEdgeIntersection();
 
+  bool projectionFeasible(const Coordinate& x, const Coordinate& nx, const Coordinate& y, const Coordinate& ny) const;
+
 public:
   Projection(const std::pair<Corners, Corners>& corners, const std::pair<Normals, Normals>& normals);
   void project();

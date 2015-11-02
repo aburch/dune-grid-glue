@@ -6,6 +6,16 @@ namespace GridGlue {
 
 namespace ProjectionImplementation {
 
+/**
+ * Return corner coordinates of a simplex.
+ *
+ * Given the number <code>c</code> of a corner, this function returns
+ * the coordinate of the <code>c</code>th corner of the standard
+ * simplex with the same dimension as <code>Coordinate</code>.
+ *
+ * \param c corner number
+ * \returns coordinate of <code>c</code>th corner of the standard simplex
+ */
 template<typename Coordinate, typename Field>
 inline Coordinate
 corner(unsigned c)
@@ -17,7 +27,15 @@ corner(unsigned c)
   return x;
 }
 
-/* Translate edge to corner numbers */
+/**
+ * Translate edge to corner numbers.
+ *
+ * Given the number <code>edge</code> of an edge of a triangle, this
+ * function returns the number of the corners belonging to it.
+ *
+ * \param edge edge number of a triangle
+ * \return numbers of corners of the edge
+ */
 inline std::pair<unsigned, unsigned>
 edgeToCorners(unsigned edge)
 {
@@ -29,6 +47,20 @@ edgeToCorners(unsigned edge)
   DUNE_THROW(Dune::Exception, "Unexpected edge number.");
 }
 
+/**
+ * Convert barycentric coordinates to euclidian coordinates.
+ *
+ * This function converts barycentric coordinates <code>x</code> with respect
+ * to the triangle with corners <code>corners</code> to euclidian coordinates.
+ * For the result <code>y</code> the following equation holds:
+ * <code>yᵢ = (cornersᵢ₊₁ - corners₀) xᵢ</code>
+ *
+ * Note that this can also be for linear interpolation of normals given on the corners.
+ *
+ * \param x barycentric coordinates
+ * \param corners coordinates or normals at the corners
+ * \return euclidian coordinates or interpolated normal
+ */
 template<typename Coordinate, typename Corners>
 inline typename Corners::value_type
 interpolate(const Coordinate& x, const Corners& corners)
@@ -39,6 +71,17 @@ interpolate(const Coordinate& x, const Corners& corners)
   return y;
 }
 
+/**
+ * Check if the point <code>x</code> is inside the standard simplex.
+ *
+ * This functions checks if the point <code>x</code> is in the inside
+ * (or on the boundary) of the standard simplex, that is
+ * <code>xᵢ ≥ 0</code> and <code>∑ xᵢ ≤ 1</code>.
+ *
+ * \param x coordinates of point to check
+ * \param epsilon tolerance used for floating-point comparisions
+ * \return <code>true</code> if <code>x</code> is inside, <code>false</code> otherwise
+ */
 template<typename Coordinate, typename Field>
 inline bool
 inside(const Coordinate& x, const Field& epsilon)
@@ -69,11 +112,20 @@ distanceAlongNormal(const Local& xlocal, const std::array<Coordinate, Coordinate
 
 template<typename Coordinate>
 Projection<Coordinate>
-::Projection(const std::pair<Corners, Corners>& corners, const std::pair<Normals, Normals>& normals)
+::Projection(const std::pair<Corners, Corners>& corners, const std::pair<Normals, Normals>& normals, const Field overlap)
   : m_corners(corners)
   , m_normals(normals)
+  , m_overlap(overlap)
 {
   /* Nothing. */
+}
+
+template<typename Coordinate>
+void
+Projection<Coordinate>
+::epsilon(const Field epsilon)
+{
+  m_epsilon = epsilon;
 }
 
 template<typename Coordinate>
@@ -108,7 +160,7 @@ Projection<Coordinate>
   m_projection_valid = true;
   success.reset();
 
-  /* Project x_i */
+  /* Project xᵢ */
   for (unsigned i = 0; i < origin.size(); ++i) {
     //std::cout << "do projection of " << origin[i] << std::endl;
     for (unsigned j = 0; j < dim; ++j)
@@ -179,7 +231,7 @@ Projection<Coordinate>
   }
 
   for (unsigned i = 0; i < dim; ++i) {
-    /* Convert y_i to barycentric coordinates with respect to \phi(x_j) */
+    /* Convert yᵢ to barycentric coordinates with respect to Φ(xⱼ) */
     v[dim-1] = corners[i];
     v[dim-1] -= interpolate(images[0], corners);
 
@@ -202,7 +254,7 @@ Projection<Coordinate>
       preimages[i][dim-1] = (x - corners[i])*nx;
     }
 
-    /* Check y_i lies inside the \phi(x_j) */
+    /* Check y_i lies inside the Φ(xⱼ) */
     bool success_i = true;
     success_i = success_i && preimages[i][dim-1] <= m_overlap+m_epsilon;
     Field sum(0);

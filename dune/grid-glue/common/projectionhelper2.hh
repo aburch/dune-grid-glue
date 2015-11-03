@@ -104,7 +104,9 @@ public:
    * array contains the preimages <code>Φ⁻¹(yⱼ)</code> of the
    * corners <code>yⱼ</code>.
    *
-   * All values are barycentric coordinates with respect to the corners of the (pre)image.
+   * The first d-1 values are the barycentric coordinates with respect
+   * to the corners of the (pre)image, the last value is the signed
+   * distance between the projected point and its (pre)image.
    *
    * \returns pair of arrays giving <code>((Φ(xᵢ))ᵢ, (Φ⁻¹(yⱼ))ⱼ)</code> in barycentric coordinates
    *

@@ -55,7 +55,8 @@ edgeToCorners(unsigned edge)
  * For the result <code>y</code> the following equation holds:
  * <code>yᵢ = (cornersᵢ₊₁ - corners₀) xᵢ</code>
  *
- * Note that this can also be for linear interpolation of normals given on the corners.
+ * Note that this can also be for linear interpolation of normals given on the
+ * corners, but this does not preserve the norm (e.g. for unit normals).
  *
  * \param x barycentric coordinates
  * \param corners coordinates or normals at the corners
@@ -69,6 +70,26 @@ interpolate(const Coordinate& x, const Corners& corners)
   for (unsigned i = 0; i < corners.size() - 1; ++i)
     y.axpy(x[i], corners[i+1] - corners[0]);
   return y;
+}
+
+/**
+ * Interpolate between unit normals on corners of a simplex.
+ *
+ * This functions interpolates between unit normals given on corners of a
+ * simplex using linear interpolation.
+ *
+ * \param x barycentric coordinates
+ * \param normals unit normals at corners
+ * \return unit normal at <code>x</code>
+ * \seealso interpolate(const Coordinate&, const Corners&)
+ */
+template<typename Coordinate, typename Normals>
+inline typename Corners::value_type
+interpolate_unit_normals(const Coordinate& x, const Normals& normals)
+{
+  auto n = interpolate(x, normals);
+  n /= n.two_norm();
+  return n;
 }
 
 /**
@@ -89,7 +110,7 @@ inside(const Coordinate& x, const Field& epsilon)
   const unsigned dim = Coordinate::dimension;
   Field sum(0);
   for (unsigned i = 0; i < dim-1; ++i) {
-    if (x[i] < -epsilon || x[i] > Field(1) + epsilon)
+    if (x[i] < -epsilon)
       return false;
     sum += x[i];
   }
@@ -103,7 +124,7 @@ template<typename Local, typename Coordinate>
 inline Coordinate::value_type
 distanceAlongNormal(const Local& xlocal, const std::array<Coordinate, Coordinate::dimension>& xnormals, const Coordinate& x, const Coordinate& y)
 {
-  const auto& n = interpolate(xlocal, xnormals);
+  const auto& n = interpolate_unit_normals(xlocal, xnormals);
   return (y-x)*n;
 }
 #endif
@@ -133,6 +154,17 @@ void
 Projection<Coordinate>
 ::doProjection()
 {
+  /* Try to obtain Φ(xᵢ) for each corner xᵢ of the preimage triangle.
+   * This means solving a linear system of equations
+   *    Φ(xᵢ) = (1-α-β) y₀ + α y₁ + β y₂ = xᵢ + δ nᵢ
+   * or α (y₁ - y₀) + β (y₂ - y₀) - δ nᵢ = xᵢ - y₀
+   * to obtain the barycentric coordinates (α, β) of Φ(xᵢ) in the image
+   * triangle and the distance δ.
+   *
+   * In the matrix m corresponding to the system, only the third column and the
+   * right-hand side depend on i. The first two columns can be assembled before
+   * and reused.
+   */
   using namespace ProjectionImplementation;
   typedef Dune::FieldMatrix<Field, dim, dim> Matrix;
   Matrix m;
@@ -140,9 +172,14 @@ Projection<Coordinate>
   const auto& origin = m_corners.first;
   const auto& normals = m_normals.first;
   const auto& target = m_corners.second;
+  const auto& target_normals = m_corners.second;
   auto& images = m_images.first;
   auto& success = m_success.first;
 
+  /* directionsᵢ = (yᵢ - y₀) / ||yᵢ - y₀||
+   * These are the first to columns of the system matrix; the rescaling is done
+   * to ensure all columns have a comparable norm (the last has the normal with norm 1.
+   */
   std::array<Coordinate, dim-1> directions;
   std::array<Field, dim-1> scales;
   for (unsigned i = 0; i < dim-1; ++i) {
@@ -160,22 +197,35 @@ Projection<Coordinate>
   m_projection_valid = true;
   success.reset();
 
-  /* Project xᵢ */
+  /* Now project xᵢ for each i */
   for (unsigned i = 0; i < origin.size(); ++i) {
     //std::cout << "do projection of " << origin[i] << std::endl;
     for (unsigned j = 0; j < dim; ++j)
       m[j][dim-1] = normals[i][j];
 
     const Coordinate rhs = origin[i] - target[0];
+
     try {
-      //std::cout << "m = " << m << std::endl;
+      /* y = (α, β, δ) */
       auto& y = images[i];
       m.solve(y, rhs);
       for (unsigned j = 0; j < dim-1; ++j)
         y[j] /= scales[j];
+      /* Solving gave us -δ as the term is "-δ nᵢ". */
       y[dim-1] *= Field(-1);
 
-      bool success_i = inside(y, m_epsilon) && y[dim-1] > -m_overlap-m_epsilon;
+      /* Signed distance along normal at Φ(xᵢ):
+       *   xmpx = xᵢ - Φ(xᵢ)
+       *   distance = (xᵢ - Φ(xᵢ))*n(Φ(xᵢ)) = xmpx*ny
+       */
+      auto xmpx = origin[i];
+      xmpx -= interpolate(y, target);
+      const auto ny = interpolate_unit_normals(y, target_normals);
+      const auto dy = xmpx * ny;
+
+      bool success_i = inside(y, m_epsilon)
+                       && y[dim-1] > -m_overlap-m_epsilon
+                       && dy > -m_overlap-m_epsilon;
       success.set(i, success_i);
     }
     catch (const Dune::FMatrixError&) {
@@ -202,11 +252,24 @@ void
 Projection<Coordinate>
 ::doInverseProjection()
 {
+  /* Try to obtain Φ⁻¹(yᵢ) for each corner yᵢ of the image triangle.
+   * Instead of solving the problem directly (which would lead to
+   * non-linear equations), we make use of the forward projection Φ
+   * which projects the preimage triangle on the plane spanned by the
+   * image triangle. The inverse projection is then given by finding
+   * the barycentric coordinates of yᵢ with respect to the triangle
+   * with the corners Φ(xᵢ). This way we only have to solve linear
+   * equations.
+   */
+
   using namespace ProjectionImplementation;
   using std::get;
   typedef Dune::FieldMatrix<Field, dim-1, dim-1> Matrix;
   typedef Dune::FieldVector<Field, dim-1> Vector;
 
+  /* The inverse projection can only be computed if the forward projection
+   * managed to project all xᵢ on the plane spanned by the yᵢ
+   */
   if (!m_projection_valid) {
     m_success.second.reset();
     return;
@@ -249,21 +312,14 @@ Projection<Coordinate>
     /* Calculate distance along normal direction */
     {
       const auto x = interpolate(z, get<0>(m_corners));
-      auto nx = interpolate(z, get<0>(m_normals));
-      nx /= nx.two_norm();
+      const auto nx = interpolate_unit_normals(z, get<0>(m_normals));
       preimages[i][dim-1] = (x - corners[i])*nx;
     }
 
     /* Check y_i lies inside the Φ(xⱼ) */
     bool success_i = true;
     success_i = success_i && preimages[i][dim-1] <= m_overlap+m_epsilon;
-    Field sum(0);
-    for (unsigned j = 0; j < dim-1; ++j) {
-      success_i = success_i && z[j] >= -m_epsilon;
-      sum += z[j];
-    }
-    success_i = success_i && sum <= 1 + m_epsilon;
-
+    success_i = success_i && inside(z, m_epsilon);
     success.set(i, success_i);
   }
 

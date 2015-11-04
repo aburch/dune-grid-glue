@@ -88,7 +88,7 @@ private:
    *
    * See also \seealso epsilon(Field)
    */
-  Field m_epsilon = Field(1e-4);
+  Field m_epsilon = Field(1e-6);
 
   /** \copydoc images() */
   std::tuple<Images, Preimages> m_images;

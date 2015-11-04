@@ -84,7 +84,7 @@ interpolate(const Coordinate& x, const Corners& corners)
  * \seealso interpolate(const Coordinate&, const Corners&)
  */
 template<typename Coordinate, typename Normals>
-inline typename Corners::value_type
+inline typename Normals::value_type
 interpolate_unit_normals(const Coordinate& x, const Normals& normals)
 {
   auto n = interpolate(x, normals);
@@ -214,19 +214,8 @@ Projection<Coordinate>
       /* Solving gave us -δ as the term is "-δ nᵢ". */
       y[dim-1] *= Field(-1);
 
-      /* Signed distance along normal at Φ(xᵢ):
-       *   xmpx = xᵢ - Φ(xᵢ)
-       *   distance = (xᵢ - Φ(xᵢ))*n(Φ(xᵢ)) = xmpx*ny
-       */
-      auto xmpx = origin[i];
-      xmpx -= interpolate(y, target);
-      const auto ny = interpolate_unit_normals(y, target_normals);
-      const auto dy = xmpx * ny;
-
-      bool success_i = inside(y, m_epsilon)
-                       && y[dim-1] > -m_overlap-m_epsilon
-                       && dy > -m_overlap-m_epsilon;
-      success.set(i, success_i);
+      const bool feasible = projectionFeasible(origin[i], y, target, target_normals);
+      success.set(i, feasible);
     }
     catch (const Dune::FMatrixError&) {
       success.set(i, false);
@@ -313,14 +302,12 @@ Projection<Coordinate>
     {
       const auto x = interpolate(z, get<0>(m_corners));
       const auto nx = interpolate_unit_normals(z, get<0>(m_normals));
-      preimages[i][dim-1] = (x - corners[i])*nx;
+      preimages[i][dim-1] = (corners[i] - x)*nx;
     }
 
     /* Check y_i lies inside the Φ(xⱼ) */
-    bool success_i = true;
-    success_i = success_i && preimages[i][dim-1] <= m_overlap+m_epsilon;
-    success_i = success_i && inside(z, m_epsilon);
-    success.set(i, success_i);
+    const bool feasible = projectionFeasible(corners[i], preimages[i], get<0>(m_corners), get<0>(m_normals));
+    success.set(i, feasible);
   }
 
 #if 0
@@ -429,14 +416,24 @@ Projection<Coordinate>
         }
 #endif
 
+        /* Make sure the intersection is in the triangle. */
         if (!inside(local_x, m_epsilon) || !inside(local_y, m_epsilon))
           continue;
 
-        /* TODO: check overlap */
+        /* Make sure the intersection respects overlap. */
+        auto xy = interpolate(local_x, get<0>(m_corners));
+        xy -= interpolate(local_y, get<1>(m_corners));
+        const auto nx = interpolate_unit_normals(local_x, get<0>(m_normals));
+        const auto ny = interpolate_unit_normals(local_y, get<1>(m_normals));
+        local_x[dim-1] = -(xy*nx);
+        local_y[dim-1] = xy*ny;
 
+        if (local_x[dim-1] < -m_overlap-m_epsilon || local_y[dim-1] < -m_overlap-m_epsilon)
+          continue;
+
+        /* Intersection is feasible. Store it. */
         auto& intersection = m_edge_intersections[m_number_of_edge_intersections++];
         intersection = { {edgex, edgey}, {local_x, local_y} };
-
       }
       catch(const Dune::FMatrixError&) {
         /* Edges might be parallel, ignore and continue with next edge */
@@ -447,8 +444,27 @@ Projection<Coordinate>
 
 template<typename Coordinate>
 bool Projection<Coordinate>
-::projectionFeasible(const Coordinate& x, const Coordinate& nx, const Coordinate& y, const Coordinate& ny) const
+::projectionFeasible(const Coordinate& x, const Coordinate& px, const Corners& corners, const Normals& normals) const
 {
+  using namespace ProjectionImplementation;
+
+  /* Image must be within simplex. */
+  if (!inside(px, m_epsilon))
+    return false;
+
+  /* Distance along normal must not be smaller than -overlap. */
+  if (px[dim-1] < -m_overlap-m_epsilon)
+    return false;
+
+  /* Distance along normal at image must not be smaller than -overlap. */
+  auto xmy = x;
+  xmy -= interpolate(px, corners);
+  const auto n = interpolate_unit_normals(px, normals);
+  const auto d = xmy * n;
+  if (d < -m_overlap-m_epsilon)
+    return false;
+
+  /* Okay, projection is feasible. */
   return true;
 }
 

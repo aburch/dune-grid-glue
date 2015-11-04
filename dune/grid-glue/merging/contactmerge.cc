@@ -50,15 +50,15 @@ void ContactMerge<dimworld, T>::computeIntersections(const Dune::GeometryType& g
     //  Compute all corners of the intersection polytope
     /////////////////////////////////////////////////////
 
-    const auto corners = std::make_pair(grid1ElementCorners, grid2ElementCorners);
-    const auto normals = std::make_pair(directions1, directions2);
-    Dune::GridGlue::Projection<WorldCoords> p(corners, normals);
-    p.project();
+    const auto corners = std::tie(grid1ElementCorners, grid2ElementCorners);
+    const auto normals = std::tie(directions1, directions2);
+    Dune::GridGlue::Projection<WorldCoords> p;
+    p.project(corners, normals);
 
     /* projection */
     {
-      const auto& success = p.m_success.first;
-      const auto& images = p.m_images.first;
+      const auto& success = get<0>(p.success());
+      const auto& images = get<0>(p.images());
       for (unsigned i = 0; i < dimworld; ++i) {
         if (success[i]) {
           std::array<LocalCoords, 2> corner;
@@ -72,8 +72,8 @@ void ContactMerge<dimworld, T>::computeIntersections(const Dune::GeometryType& g
 
     /* inverse projection */
     {
-      const auto& success = p.m_success.second;
-      const auto& preimages = p.m_images.second;
+      const auto& success = get<1>(p.success());
+      const auto& preimages = get<1>(p.images());
       for (unsigned i = 0; i < dimworld; ++i) {
         if (success[i]) {
           std::array<LocalCoords, 2> corner;
@@ -87,9 +87,9 @@ void ContactMerge<dimworld, T>::computeIntersections(const Dune::GeometryType& g
 
     /* edge intersections */
     {
-      for (unsigned i = 0; i < p.m_number_of_edge_intersections; ++i) {
+      for (unsigned i = 0; i < p.numberOfEdgeIntersections(); ++i) {
         std::array<LocalCoords, 2> corner;
-        const auto& local = p.m_edge_intersections[i].local;
+        const auto& local = p.edgeIntersections()[i].local;
         for (unsigned j = 0; j < dim; ++j) {
           corner[0][j] = local[0][j];
           corner[1][j] = local[1][j];
@@ -110,7 +110,7 @@ void ContactMerge<dimworld, T>::computeIntersections(const Dune::GeometryType& g
 
         bool intersects(true);
         for (int k=0; k<ref2.size(i,1,dim); k++)
-            intersects &= p.m_success.second[ref2.subEntity(i,1,k,dim)];
+            intersects &= get<1>(p.success())[ref2.subEntity(i,1,k,dim)];
 
         if (intersects)
             neighborIntersects2[i] = true;
@@ -124,7 +124,7 @@ void ContactMerge<dimworld, T>::computeIntersections(const Dune::GeometryType& g
 
         bool intersects(true);
         for (int k=0; k<ref1.size(i,1,dim); k++)
-            intersects &= p.m_success.first[ref1.subEntity(i,1,k,dim)];
+            intersects &= get<0>(p.success())[ref1.subEntity(i,1,k,dim)];
 
         if (intersects)
             neighborIntersects1[i] = true;
@@ -137,9 +137,9 @@ void ContactMerge<dimworld, T>::computeIntersections(const Dune::GeometryType& g
                                                               grid2ElementType, polytopeCorners, hitCorners,
                                                               neighborIntersects1, neighborIntersects2, overlap_);
 #else
-    for (unsigned i = 0; i < p.m_number_of_edge_intersections; ++i) {
+    for (unsigned i = 0; i < p.numberOfEdgeIntersections(); ++i) {
       std::cout << "There was an edge intersection?!" << std::endl;
-      const auto& edge = p.m_edge_intersections[i].edge;
+      const auto& edge = p.edgeIntersections()[i].edge;
       neighborIntersects1[edge[0]] = true;
       neighborIntersects2[edge[1]] = true;
       //neighborIntersects1[edge[1]] = true;

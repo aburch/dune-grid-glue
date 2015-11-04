@@ -11,66 +11,90 @@ namespace Dune {
 namespace GridGlue {
 
 /**
- * Projection of a line (triangle) on another line (triangle).
+ * \brief Projection of a line (triangle) on another line (triangle).
+ *
+ * This class implements methods to project a line (2d) or triangle (3d) on
+ * another line (triangle) along normal field given by values at the corners.
  */
 template<typename Coordinate>
 class Projection
 {
 public:
   /**
-   * Intersection between two edges of a triangle.
+   * \brief Intersection between two edges of a triangle.
+   *
+   * See also \ref Projection<Coordinate>::edgeIntersections()
    */
   struct EdgeIntersection
   {
     /**
-     * Edge numbers in image and preimage triangle
+     * \brief Edge numbers in image and preimage triangle.
      */
     std::array<unsigned, 2> edge;
 
     /**
+     * \brief Local coordinates of intersection and distance along normals.
+     *
      * Local coordinate of intersection point in barycentric coordinates with
      * respect to image and preimage triangle.
      */
     std::array<Coordinate, 2> local;
   };
 
+  /**
+   * \brief dimension of coordinates
+   */
   constexpr static unsigned dim = Coordinate::dimension;
+
+  /**
+   * \brief maximum number of edge-edge intersections
+   *
+   * See also \seealso edgeIntersections()
+   */
   constexpr static unsigned maxEdgeIntersections = dim == 3 ? 9 : 0;
 
   static_assert(dim == 2 || dim == 3, "Projection only implemented for dim=2 or dim=3");
 
+  /**
+   * \brief Scalar type.
+   */
   typedef typename Coordinate::field_type Field;
 
-  // TODO: Make these template parameters? They could be std::array, but the
-  // code using the projection currently uses std::vector and we want to
-  // avoid copys.
-  typedef std::vector<Coordinate> Corners;
-  typedef std::vector<Coordinate> Normals;
-
+  /**
+   * \brief List of corner images.
+   *
+   * This type is used to return the list of images Φ(xᵢ) of the corners xᵢ
+   * in barycentric coordinates with respect to the image simplex.
+   * The last entry is used to return the (signed) distance along the normal.
+   */
   typedef std::array<Coordinate, dim> Images;
-  typedef Images Preimages;
-
-//private:
-  const std::pair<Corners, Corners>& m_corners;
-  const std::pair<Normals, Normals>& m_normals;
 
   /**
-   * Overlap allowed for the projection to be considered valid.
+   * List of corner preimages.
+   *
+   * This is used as \ref Images, but for the preimages Φ⁻¹(yᵢ) of the corners
+   * yᵢ of the image simplex.
+   */
+  typedef Images Preimages;
+
+private:
+  /**
+   * \brief Overlap allowed for the projection to be considered valid.
    */
   const Field m_overlap = Field(0);
 
   /**
-   * epsilon used for floating-point comparisons
+   * \brief epsilon used for floating-point comparisons.
    *
-   * \ref epsilon(Field)
+   * See also \seealso epsilon(Field)
    */
   Field m_epsilon = Field(1e-4);
 
   /** \copydoc images() */
-  std::pair<Images, Preimages> m_images;
+  std::tuple<Images, Preimages> m_images;
 
   /** \copydoc success() */
-  std::pair<std::bitset<dim>, std::bitset<dim> > m_success;
+  std::tuple<std::bitset<dim>, std::bitset<dim> > m_success;
 
   /** \copydoc numberOfEdgeIntersections() */
   unsigned m_number_of_edge_intersections;
@@ -79,6 +103,8 @@ public:
   std::array<EdgeIntersection, maxEdgeIntersections> m_edge_intersections;
 
   /**
+   * \brief Forward projection successful for all corners <code>xᵢ</code>
+   *
    * If <code>true</code>, the forward projection was successful, that is
    * Φ(xᵢ) could be computed for all xᵢ.
    *
@@ -90,28 +116,37 @@ public:
   bool m_projection_valid;
 
   /**
-   * Compute forward projection Φ(xᵢ) for all xᵢ.
+   * \brief Compute forward projection Φ(xᵢ) for all xᵢ.
+   *
+   * \copydetails project
    */
-  void doProjection();
+  template<typename Corners, typename Normals>
+  void doProjection(const std::tuple<Corners&, Corners&>& corners, const std::tuple<Normals&, Normals&>& normals);
 
   /**
-   * Compute inverse projection Φ(yᵢ) for all yᵢ.
+   * \brief Compute inverse projection Φ⁻¹(yᵢ) for all yᵢ.
    *
    * \note This requires the forward projection was already computed by
    *       \ref doProjection.
+   *
+   * \copydetails project
    */
-  void doInverseProjection();
+  template<typename Corners, typename Normals>
+  void doInverseProjection(const std::tuple<Corners&, Corners&>& corners, const std::tuple<Normals&, Normals&>& normals);
 
   /**
-   * Compute intersections between projected edges and edges of the image simplex.
+   * \brief Compute intersections between projected edges and edges of the image simplex.
    *
    * \note This requires the forward and inverse projections were already
    *       computed by \ref doProjection and \ref doInverseProjection.
+   *
+   * \copydetails project
    */
-  void doEdgeIntersection();
+  template<typename Corners, typename Normals>
+  void doEdgeIntersection(const std::tuple<Corners&, Corners&>& corners, const std::tuple<Normals&, Normals&>& normals);
 
   /**
-   * Check if projection is feasible.
+   * \brief Check if projection is feasible.
    *
    * Given a point <code>x</code>, its image <code>px</code> in barycentric
    * coordinates together with the signed distance along the normal at
@@ -133,33 +168,39 @@ public:
    * \param normals normals of image simplex
    * \return <code>true</code> if the projection is feasible, <code>false</code> otherwise.
    */
+  template<typename Corners, typename Normals>
   inline bool projectionFeasible(const Coordinate& x, const Coordinate& px, const Corners& corners, const Normals& normals) const;
 
 public:
-  // TODO: Pass corners and normals to project to avoid the reference?
   /**
-   * \warning This class stores a reference to <code>corners</code> and <code>normals</code> to avoid copies.
-   *          Both have to stay valid until \ref project() is called.
-   *
-   * \param corners euclidean coordinates of corners of preimage and image
-   * \param normals normals at corners of preimage and image
+   * \param overlap allowed overlap
    */
-  Projection(const std::pair<Corners, Corners>& corners, const std::pair<Normals, Normals>& normals, const Field overlap = Field(0));
+  Projection(const Field overlap = Field(0));
 
   /**
-   * Set epsilon used for floating-point comparisons.
+   * \brief Set epsilon used for floating-point comparisons.
    *
    * \param epsilon new epsilon used for floating-point comaprisons
    */
   void epsilon(const Field epsilon);
 
   /**
-   * Do the actual projection.
+   * \brief Do the actual projection.
+   *
+   * \param corners euclidean coordinates of corners of preimage and image
+   * \param normals normals at corners of preimage and image
+   * \tparam Corners list of corner coordinates, should be
+   *                 <code>std::vector<Coordinate></code> or
+   *                 <code>std::array<Coordinate, n></code>
+   * \tparam Normals list of corner normals, should be
+   *                 <code>std::vector<Coordinate></code> or
+   *                 <code>std::array<Coordinate, n></code>
    */
-  void project();
+  template<typename Corners, typename Normals>
+  void project(const std::tuple<Corners&, Corners&>& corners, const std::tuple<Normals&, Normals&>& normals);
 
   /**
-   * Images and preimages of corners.
+   * \brief Images and preimages of corners.
    *
    * Returns a pair of arrays. The first array contains the images
    * <code>Φ(xᵢ)</code> of the corners <code>xᵢ</code>. The second
@@ -176,11 +217,11 @@ public:
    *
    * \ref success()
    */
-  const std::pair<Images, Preimages>& images() const
+  const std::tuple<Images, Preimages>& images() const
     { return m_images; }
 
   /**
-   * Indicate whether projection (inverse projection) is valid for each corner or not.
+   * \brief Indicate whether projection (inverse projection) is valid for each corner or not.
    *
    * Returns a pair of bitsets. The first bitset indicates if the projection
    * <code>Φ(xᵢ)</code> is valid for each corner <code>xᵢ</code>, that is
@@ -193,11 +234,11 @@ public:
    * \returns pair of bitsets indicating success of (inverse) projection at
    *          corners <code>xᵢ</code> (<code>yⱼ</code>)
    */
-  const std::pair<std::bitset<dim>, std::bitset<dim> >& success() const
+  const std::tuple<std::bitset<dim>, std::bitset<dim> >& success() const
     { return m_success; }
 
   /**
-   * Number of edge intersections.
+   * \brief Number of edge intersections.
    *
    * \note \ref project() must be called before this method can be used.
    *
@@ -207,12 +248,12 @@ public:
     { return m_number_of_edge_intersections; }
 
   /**
-   * Edge intersections.
+   * \brief Edge-edge intersections.
+   *
+   * \note \ref project() must be called before this method can be used.
    *
    * \warning Only the first \ref numberOfEdgeIntersections() entries are valid
    *          edge intersections.
-   *
-   * \seealso EdgeIntersection
    */
   const std::array<EdgeIntersection, maxEdgeIntersections>& edgeIntersections() const
     { return m_edge_intersections; }

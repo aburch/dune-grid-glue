@@ -133,10 +133,8 @@ distanceAlongNormal(const Local& xlocal, const std::array<Coordinate, Coordinate
 
 template<typename Coordinate>
 Projection<Coordinate>
-::Projection(const std::pair<Corners, Corners>& corners, const std::pair<Normals, Normals>& normals, const Field overlap)
-  : m_corners(corners)
-  , m_normals(normals)
-  , m_overlap(overlap)
+::Projection(const Field overlap)
+  : m_overlap(overlap)
 {
   /* Nothing. */
 }
@@ -150,9 +148,10 @@ Projection<Coordinate>
 }
 
 template<typename Coordinate>
+template<typename Corners, typename Normals>
 void
 Projection<Coordinate>
-::doProjection()
+::doProjection(const std::tuple<Corners&, Corners&>& m_corners, const std::tuple<Normals&, Normals&>& m_normals)
 {
   /* Try to obtain Φ(xᵢ) for each corner xᵢ of the preimage triangle.
    * This means solving a linear system of equations
@@ -166,15 +165,16 @@ Projection<Coordinate>
    * and reused.
    */
   using namespace ProjectionImplementation;
+  using std::get;
   typedef Dune::FieldMatrix<Field, dim, dim> Matrix;
   Matrix m;
 
-  const auto& origin = m_corners.first;
-  const auto& normals = m_normals.first;
-  const auto& target = m_corners.second;
-  const auto& target_normals = m_corners.second;
-  auto& images = m_images.first;
-  auto& success = m_success.first;
+  const auto& origin = get<0>(m_corners);
+  const auto& normals = get<0>(m_normals);
+  const auto& target = get<1>(m_corners);
+  const auto& target_normals = get<1>(m_normals);
+  auto& images = get<0>(m_images);
+  auto& success = get<0>(m_success);
 
   /* directionsᵢ = (yᵢ - y₀) / ||yᵢ - y₀||
    * These are the first to columns of the system matrix; the rescaling is done
@@ -237,9 +237,10 @@ Projection<Coordinate>
 }
 
 template<typename Coordinate>
+template<typename Corners, typename Normals>
 void
 Projection<Coordinate>
-::doInverseProjection()
+::doInverseProjection(const std::tuple<Corners&, Corners&>& m_corners, const std::tuple<Normals&, Normals&>& m_normals)
 {
   /* Try to obtain Φ⁻¹(yᵢ) for each corner yᵢ of the image triangle.
    * Instead of solving the problem directly (which would lead to
@@ -260,7 +261,7 @@ Projection<Coordinate>
    * managed to project all xᵢ on the plane spanned by the yᵢ
    */
   if (!m_projection_valid) {
-    m_success.second.reset();
+    get<1>(m_success).reset();
     return;
   }
 
@@ -318,9 +319,10 @@ Projection<Coordinate>
 }
 
 template<typename Coordinate>
+template<typename Corners, typename Normals>
 void
 Projection<Coordinate>
-::doEdgeIntersection()
+::doEdgeIntersection(const std::tuple<Corners&, Corners&>& m_corners, const std::tuple<Normals&, Normals&>& m_normals)
 {
   using namespace ProjectionImplementation;
   using std::get;
@@ -357,7 +359,7 @@ Projection<Coordinate>
     std::tie(i, j) = edgeToCorners(edgex);
 
     /* Both sides of edgex lie in the target triangle means no edge intersection */
-    if (m_success.first[i] && m_success.first[j])
+    if (get<0>(m_success)[i] && get<0>(m_success)[j])
       continue;
 
     const auto pxi = interpolate(images[i], ys);
@@ -372,7 +374,7 @@ Projection<Coordinate>
       std::tie(k, l) = edgeToCorners(edgey);
 
       /* Both sides of edgey lie in the projected triangle means no edge intersection */
-      if (m_success.second[k] && m_success.second[l])
+      if (get<1>(m_success)[k] && get<1>(m_success)[l])
         continue;
 
       const auto ykyl = ys[k] - ys[l];
@@ -443,6 +445,7 @@ Projection<Coordinate>
 }
 
 template<typename Coordinate>
+template<typename Corners, typename Normals>
 bool Projection<Coordinate>
 ::projectionFeasible(const Coordinate& x, const Coordinate& px, const Corners& corners, const Normals& normals) const
 {
@@ -469,12 +472,13 @@ bool Projection<Coordinate>
 }
 
 template<typename Coordinate>
+template<typename Corners, typename Normals>
 void Projection<Coordinate>
-::project()
+::project(const std::tuple<Corners&, Corners&>& corners, const std::tuple<Normals&, Normals&>& normals)
 {
-  doProjection();
-  doInverseProjection();
-  doEdgeIntersection();
+  doProjection(corners, normals);
+  doInverseProjection(corners, normals);
+  doEdgeIntersection(corners, normals);
 }
 
 } /* namespace GridGlue */

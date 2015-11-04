@@ -199,7 +199,6 @@ Projection<Coordinate>
 
   /* Now project xᵢ for each i */
   for (unsigned i = 0; i < origin.size(); ++i) {
-    //std::cout << "do projection of " << origin[i] << std::endl;
     for (unsigned j = 0; j < dim; ++j)
       m[j][dim-1] = normals[i][j];
 
@@ -222,18 +221,6 @@ Projection<Coordinate>
       m_projection_valid = false;
     }
   }
-
-#if 0
-  std::cout << "-------------------------------------------" << std::endl
-            << "projection: success = " << success << std::endl
-            << "  origin: " << std::endl;
-  for (const auto& x : origin)
-    std::cout << "    " << x << std::endl;
-  std::cout << "  target:" << std::endl;
-  for (const auto& x : target)
-    std::cout << "    " << x << std::endl;
-  std::cout << std::endl;
-#endif
 }
 
 template<typename Coordinate>
@@ -293,9 +280,6 @@ Projection<Coordinate>
       rhs[j] = v[dim-1]*v[j];
     m.solve(z, rhs);
 
-    //std::cout << "m = " << std::endl << m << std::endl;
-    //std::cout << "rhs = " << rhs << std::endl;
-
     for (unsigned j = 0; j < dim-1; ++j)
       preimages[i][j] = z[j];
 
@@ -310,12 +294,6 @@ Projection<Coordinate>
     const bool feasible = projectionFeasible(corners[i], preimages[i], get<0>(m_corners), get<0>(m_normals));
     success.set(i, feasible);
   }
-
-#if 0
-  std::cout << "-------------------------------------------" << std::endl
-            << "inverse projection: success = " << success << std::endl
-            << std::endl;
-#endif
 }
 
 template<typename Coordinate>
@@ -401,22 +379,6 @@ Projection<Coordinate>
         local_x.axpy(z[0], corner<Coordinate, Field>(j) - corner<Coordinate, Field>(i));
         Coordinate local_y = corner<Coordinate, Field>(k);
         local_y.axpy(z[1], corner<Coordinate, Field>(l) - corner<Coordinate, Field>(k));
-
-#if 0
-        std::cout 
-                  << "matrix: " << std::endl
-                  << mat << std::endl
-                  << "rhs: " << rhs << std::endl
-                  << "solution: " << z << std::endl
-                  << "local_x: " << local_x << std::endl
-                  << "local_y: " << local_y << std::endl;
-
-        // TODO: Use earlier check
-        if (z[0] != z[0] || z[1] != z[1]) {
-          std::cout << "NAN" << std::endl;
-          continue;
-        }
-#endif
 
         /* Make sure the intersection is in the triangle. */
         if (!inside(local_x, m_epsilon) || !inside(local_y, m_epsilon))

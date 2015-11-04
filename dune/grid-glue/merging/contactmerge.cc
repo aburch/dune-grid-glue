@@ -131,23 +131,11 @@ void ContactMerge<dimworld, T>::computeIntersections(const Dune::GeometryType& g
     }
 
     // Compute the edge intersections
-#if 0
-    Projection::template addEdgeIntersections<dim,dimworld,T>(grid1ElementCorners,grid2ElementCorners,
-                                                              directions1, grid1ElementType,
-                                                              grid2ElementType, polytopeCorners, hitCorners,
-                                                              neighborIntersects1, neighborIntersects2, overlap_);
-#else
     for (unsigned i = 0; i < p.numberOfEdgeIntersections(); ++i) {
-      std::cout << "There was an edge intersection?!" << std::endl;
       const auto& edge = p.edgeIntersections()[i].edge;
       neighborIntersects1[edge[0]] = true;
       neighborIntersects2[edge[1]] = true;
-      //neighborIntersects1[edge[1]] = true;
-      //neighborIntersects2[edge[0]] = true;
-      //neighborIntersects1[edge[2]] = true;
-      //neighborIntersects2[edge[1]] = true;
     }
-#endif
 
     // remove possible doubles
     removeDoubles(polytopeCorners);

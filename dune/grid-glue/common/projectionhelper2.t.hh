@@ -1,5 +1,6 @@
 #include <dune/common/fmatrix.hh>
-#include <limits>
+
+#include <cmath>
 
 namespace Dune {
 namespace GridGlue {

@@ -4,8 +4,6 @@
 #include <array>
 #include <bitset>
 #include <tuple>
-#include <utility>
-#include <vector>
 
 namespace Dune {
 namespace GridGlue {

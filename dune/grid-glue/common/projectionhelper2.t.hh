@@ -369,10 +369,12 @@ Projection<Coordinate>
       }
 
       try {
+        using std::isfinite;
+
         mat.solve(z, rhs);
 
         /* If solving the system gives a NaN, the edges are probably parallel. */
-        if (z[0] != z[0] || z[1] != z[1])
+        if (!isfinite(z[0]) || !isfinite(z[1]))
           continue;
 
         Coordinate local_x = corner<Coordinate, Field>(i);
